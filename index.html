@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>South America Tour</title>
+  <script src="https://unpkg.com/globe.gl"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+      color: white;
+      font-family: 'Arial', sans-serif;
+    }
+    #globeContainer {
+      width: 100%;
+      height: 100vh;
+      position: relative;
+    }
+    .city-label {
+      position: absolute;
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(5px);
+      padding: 8px 15px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: bold;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      opacity: 0;
+      transition: opacity 0.3s;
+      text-transform: uppercase;
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      cursor: pointer;
+    }
+    .city-label.active {
+      background: rgba(255, 255, 255, 0.4);
+    }
+  </style>
+</head>
+<body>
+  <div id="globeContainer"></div>
+
+  <script>
+    // Initialize globe with optimized wireframe
+    const globe = Globe()
+      .globeImageUrl(null)
+      .backgroundImageUrl(null)
+      .showAtmosphere(true)
+      .atmosphereColor('rgba(255, 50, 50, 0.15)')
+      .atmosphereAltitude(0.25)
+      (document.getElementById('globeContainer'));
+
+    // Custom wireframe material with looser mesh
+    const globeMaterial = globe.globeMaterial();
+    globeMaterial.color.set(0xffffff);
+    globeMaterial.wireframe = true;
+    globeMaterial.emissive.set(0xff3333);
+    globeMaterial.emissiveIntensity = 0.1;
+    
+    // Reduce mesh density by recreating the globe geometry
+    const globeGeometry = new THREE.SphereGeometry(1, 32, 32); // Reduced from default 64
+    globe.globeObject().geometry.dispose();
+    globe.globeObject().geometry = globeGeometry;
+
+    // Add animated red glow with turbulence effect
+    const glowGeometry = new THREE.SphereGeometry(1.02, 32, 32);
+    const glowMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        time: { value: 0 }
+      },
+      vertexShader: `
+        varying vec3 vNormal;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float time;
+        varying vec3 vNormal;
+        void main() {
+          float intensity = pow(0.7 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.0);
+          float pulse = sin(time * 0.5) * 0.1 + 0.9;
+          gl_FragColor = vec4(0.8, 0.2, 0.2, intensity * 0.3 * pulse);
+        }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      side: THREE.BackSide
+    });
+    const glow = new THREE.Mesh(globeGeometry.clone(), glowMaterial);
+    glow.scale.set(1.02, 1.02, 1.02);
+    globe.scene().add(glow);
+
+    // Animate glow
+    function animateGlow() {
+      glowMaterial.uniforms.time.value += 0.01;
+      requestAnimationFrame(animateGlow);
+    }
+    animateGlow();
+
+    // South American cities data
+    const cities = [
+      { name: "SÃO PAULO", lat: -23.5505, lng: -46.6333 },
+      { name: "LIMA", lat: -12.0464, lng: -77.0428 },
+      { name: "SANTIAGO", lat: -33.4489, lng: -70.6693 }
+    ];
+
+    // Configure points with better visibility
+    globe.pointsData(cities)
+      .pointColor(() => '#ff0000')
+      .pointAltitude(0.1)
+      .pointRadius(0.2)
+      .pointResolution(16)
+      .pointLabel(d => d.name)
+      .pointsTransitionDuration(1000);
+
+    // Create arcs between cities with animation
+    const arcs = [
+      { startLat: -23.5505, startLng: -46.6333, endLat: -12.0464, endLng: -77.0428 },
+      { startLat: -12.0464, startLng: -77.0428, endLat: -33.4489, endLng: -70.6693 },
+      { startLat: -33.4489, startLng: -70.6693, endLat: -23.5505, endLng: -46.6333 }
+    ];
+
+    globe.arcsData(arcs)
+      .arcColor(() => ['rgba(255,100,100,0.8)', 'rgba(255,50,50,0.2)'])
+      .arcDashLength(0.25)
+      .arcDashGap(0.5)
+      .arcDashAnimateTime(3000)
+      .arcStroke(0.5)
+      .arcCurveResolution(32)
+      .arcsMerge(true);
+
+    // Add hover and click effects
+    const label = document.createElement('div');
+    label.className = 'city-label';
+    document.getElementById('globeContainer').appendChild(label);
+
+    let activeCity = null;
+
+    function handleCityInteraction(point) {
+      if (point) {
+        label.textContent = point.name;
+        label.style.opacity = 1;
+        label.classList.toggle('active', true);
+        const { x, y } = globe.getScreenCoords(point.lat, point.lng);
+        label.style.left = `${x}px`;
+        label.style.top = `${y}px`;
+      } else {
+        label.style.opacity = 0;
+        label.classList.remove('active');
+      }
+    }
+
+    globe.onPointHover(handleCityInteraction);
+    globe.onPointClick(point => {
+      activeCity = point;
+      handleCityInteraction(point);
+      // Zoom to city
+      globe.pointOfView({ lat: point.lat, lng: point.lng, altitude: 1.5 }, 1000);
+      // TODO: Add your click action here
+      console.log('City clicked:', point.name);
+    });
+
+    // Enable auto-rotation
+    globe.controls().autoRotate = true;
+    globe.controls().autoRotateSpeed = 0.3;
+    globe.controls().dampingFactor = 0.1;
+
+    // Initial camera position focused on South America
+    setTimeout(() => {
+      globe.pointOfView({ lat: -25, lng: -60, altitude: 2 }, 1500);
+    }, 500);
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      globe.width(window.innerWidth);
+      globe.height(window.innerHeight);
+      globe.camera().aspect = window.innerWidth / window.innerHeight;
+      globe.camera().updateProjectionMatrix();
+    });
+  </script>
+</body>
+</html>
